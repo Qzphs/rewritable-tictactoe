@@ -74,9 +74,9 @@ class GameState:
 
     def play(self, position: int, player: Mark | None = None):
         if self.winner is not None:
-            raise IllegalActionError
+            raise IllegalActionError("game over")
         if player not in (self.__acting_player, None):
-            raise IllegalActionError
+            raise IllegalActionError(f"it is not player {player}'s turn")
         self.__squares[position - 1] = self.__acting_player
         self.__acting_player = self.__acting_player.opponent
 
@@ -146,7 +146,8 @@ class Game:
         new_state = self.__current_state().copy()
         new_state.play(position, player)
         if new_state in self.__states_seen:
-            raise IllegalActionError
+            turn = self.__states_seen.index(new_state)
+            raise IllegalActionError(f"game state already seen at turn {turn}")
         self.__states_seen.append(new_state)
         self.__positions_played.append(position)
 
