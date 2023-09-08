@@ -1,180 +1,158 @@
 import tkinter
 
-from domain import GameEndedError, IllegalPlayError, NoHistoryError, RewritableTTT
+import domain
 
 
-class Interface(tkinter.Tk):
-    
+class CurrentStateDisplay(tkinter.Frame):
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.__square_displays = []
+        for ii in range(9):
+            square_display = tkinter.Button(
+                self, command=self.__click_square_command(ii + 1)
+            )
+            square_display.grid(row=ii//3, column=ii%3)
+            self.__square_displays.append(square_display)
+
+    def __click_square_command(self, position: int):
+        def command():
+            self.master.click_square(position)
+        return command
+
+    def show(self, state: domain.GameState):
+        for sq, sqd in zip(state.squares, self.__square_displays):
+            square = sq
+            square_display = sqd
+            square_display.config(image=self.master.square_image(square))
+
+
+class MainWindow(tkinter.Tk):
+
     def __init__(self):
-        tkinter.Tk.__init__(self)
+        super().__init__()
         self.title("Rewritable Tic-Tac-Toe")
-        self.__init_assets()
+        self.__game = domain.Game()
+        self.__displayed_turn = 0
+        self.__init_images()
         self.__init_menu()
-        self.__init_turn_info()
-        self.__init_error_info()
-        self.__init_playing_grid()
-        self.__init_back_arrow()
-        self.__init_forward_arrow()
-        self.__init_history_info()
-        self.__reset()
-    
-    def __init_assets(self):
-        self.__blank = tkinter.PhotoImage(file="assets/blank.png")
-        self.__blue = tkinter.PhotoImage(file="assets/blue.png")
-        #self.__blue_locked = tkinter.PhotoImage(file="blue_locked.png")
-        self.__red = tkinter.PhotoImage(file="assets/red.png")
-        #self.__red_locked = tkinter.PhotoImage(file="red_locked.png")
-        self.__back_icon = tkinter.PhotoImage(file="assets/back.png")
-        self.__forward_icon = tkinter.PhotoImage(file="assets/forward.png")
-    
+        self.__init_info_pane()
+        self.__init_game_pane()
+        self.__update_state_displays()
+
+    def __init_images(self):
+        self.__images = (
+            tkinter.PhotoImage(file="assets/square_blank.png"),
+            tkinter.PhotoImage(file="assets/square_blue.png"),
+            tkinter.PhotoImage(file="assets/square_red.png"),
+        )
+
     def __init_menu(self):
         self.__menu = tkinter.Menu(self)
         self.__game_menu = tkinter.Menu(self.__menu)
-        self.__game_menu.add_command(label="Reset", command=self.__reset)
-        self.__game_menu.add_command(label="Undo", command=self.__undo)
-        self.__game_menu.add_command(label="Undo to Here", command=self.__undo_here)
-        self.__menu.add_cascade(label="Game", menu=self.__game_menu)
+        self.__game_menu.add_command(
+            label="Reset", command=self.reset
+        )
+        self.__game_menu.add_command(
+            label="Undo", command=self.undo
+        )
+        self.__game_menu.add_command(
+            label="Undo to Here", command=self.undo_to_here
+        )
+        self.__menu.add_cascade(
+            label="Game", menu=self.__game_menu
+        )
         self.config(menu=self.__menu)
-    
-    def __init_turn_info(self):
+
+    def __init_game_pane(self):
+        self.__current_state_display = CurrentStateDisplay(self)
+        self.__current_state_display.grid(row=1, column=0)
+
+    def __init_info_pane(self):
+        self.__info_pane = tkinter.Frame(self)
+        self.__info_pane.grid(row=0, column=0)
+        self.__message_var = tkinter.StringVar()
+        self.__message_label = tkinter.Label(
+            self.__info_pane, textvariable=self.__message_var
+        )
+        self.__message_label.grid(row=0, column=0, columnspan=3)
+        self.__back_button = tkinter.Button(
+            self.__info_pane, command=self.go_back, text="<"
+        )
+        self.__back_button.grid(row=1, column=0)
         self.__turn_var = tkinter.StringVar()
-        self.__turn_info = tkinter.Label(
-            self, fg="white", textvariable=self.__turn_var
+        self.__turn_label = tkinter.Label(
+            self.__info_pane, textvariable=self.__turn_var
         )
-        self.__turn_info.grid(row=0, column=0, columnspan=5)
-    
-    def __init_error_info(self):
-        self.__error_var = tkinter.StringVar()
-        self.__error_info = tkinter.Label(
-            self, fg="white", textvariable=self.__error_var
+        self.__turn_label.grid(row=1, column=1)
+        self.__forward_button = tkinter.Button(
+            self.__info_pane, command=self.go_forward, text=">"
         )
-        self.__error_info.grid(row=1, column=0, columnspan=5)
+        self.__forward_button.grid(row=1, column=2)
+        self.__status_var = tkinter.StringVar()
+        self.__status_label = tkinter.Label(
+            self.__info_pane, textvariable=self.__status_var
+        )
+        self.__status_label.grid(row=2, column=1)
 
-    def __init_playing_grid(self):
-        self.__playing_grid = []
-        for i in range(9):
-            button = tkinter.Button(
-                self, command=self.__play(i), height=62, image=self.__blank,
-                width=50
-            )
-            button.grid(row=(2 + i//3), column=(1 + i%3))
-            self.__playing_grid.append(button)
-    
-    def __init_back_arrow(self):
-        self.__back_arrow = tkinter.Button(
-            self, command=self.__back, height=62, image=self.__back_icon,
-            width=50
+    def __update_state_displays(self):
+        self.__current_state_display.show(self.__game[self.__displayed_turn])
+        self.__message_var.set("")
+        self.__turn_var.set(
+            f"Turn {self.__displayed_turn}/{self.__game.turns_elapsed}"
         )
-        self.__back_arrow.grid(row=3, column=0)
+        if self.__game.winner == domain.Mark.BLUE:
+            self.__status_var.set("Blue wins!")
+        elif self.__game.winner == domain.Mark.RED:
+            self.__status_var.set("Red wins!")
+        elif self.__game.acting_player == domain.Mark.BLUE:
+            self.__status_var.set("Blue to play:")
+        elif self.__game.acting_player == domain.Mark.RED:
+            self.__status_var.set("Red to play:")
 
-    def __init_forward_arrow(self):
-        self.__forward_arrow = tkinter.Button(
-            self, command=self.__forward, height=62,
-            image=self.__forward_icon, width=50
-        )
-        self.__forward_arrow.grid(row=3, column=4)
+    def square_image(self, square: domain.Mark):
+        if square == domain.Mark.BLANK:
+            return self.__images[0]
+        if square == domain.Mark.BLUE:
+            return self.__images[1]
+        if square == domain.Mark.RED:
+            return self.__images[2]
 
-    def __init_history_info(self):
-        self.__history_var = tkinter.StringVar()
-        self.__history_info = tkinter.Label(
-            self, fg="white", textvariable=self.__history_var
-        )
-        self.__history_info.grid(row=5, column=0, columnspan=5)
-    
-    def __update(self):
-        self.__update_turn_info()
-        self.__update_error_info()
-        self.__update_playing_grid()
-        self.__update_history_info()
-    
-    def __update_turn_info(self):
-        if self.__game.winner == 1:
-            self.__turn_var.set("Blue wins!")
-        elif self.__game.winner == 2:
-            self.__turn_var.set("Red wins!")
-        elif self.__game.next_player == 1:
-            self.__turn_var.set("Blue to play:")
-        elif self.__game.next_player == 2:
-            self.__turn_var.set("Red to play:")
-        else:
-            self.__turn_var.set("")
-    
-    def __update_error_info(self):
-        self.__error_var.set("")
-    
-    def __update_playing_grid(self):
-        for i in range(9):
-            grid = self.__game.history[self.__history_view]
-            if grid[i] == 0:
-                self.__playing_grid[i].config(image=self.__blank)
-            elif grid[i] == 1:
-                self.__playing_grid[i].config(image=self.__blue)
-                #if i == grid.previous_move:
-                #    self.__playing_grid[i].config(image=self.__blue_locked)
-                #else:
-                #    self.__playing_grid[i].config(image=self.__blue)
-            elif grid[i] == 2:
-                self.__playing_grid[i].config(image=self.__red)
-                #if i == grid.previous_move:
-                #    self.__playing_grid[i].config(image=self.__red_locked)
-                #else:
-                #    self.__playing_grid[i].config(image=self.__red)
-        
-    def __update_history_info(self):
-        if self.__history_view == -1:
-            self.__history_var.set("Current turn")
-        else:
-            self.__history_var.set(
-                f"History: "
-                f"{len(self.__game.history) + self.__history_view}"
-                f"/{len(self.__game.history) - 1}"
-            )
-
-    def __play(self, tile):
-        def play_tile():
-            if self.__history_view < -1:
-                return
-            try:
-                self.__game.play(tile)
-                self.__update()
-            except GameEndedError:
-                return
-            except IllegalPlayError:
-                self.__error_var.set(
-                    "This is an invalid play. Choose another tile."
-                )
-        return play_tile
-    
-    def __back(self):
-        if self.__history_view <= -len(self.__game.history):
+    def go_back(self):
+        if self.__displayed_turn == 0:
             return
-        self.__history_view -= 1
-        self.__update()
+        self.__displayed_turn -= 1
+        self.__update_state_displays()
 
-    def __forward(self):
-        if self.__history_view >= -1:
+    def go_forward(self):
+        if self.__displayed_turn == self.__game.turns_elapsed:
             return
-        self.__history_view += 1
-        self.__update()
-    
-    def __reset(self):
-        self.__game = RewritableTTT()
-        self.__history_view = -1
-        self.__update()
-    
-    def __undo(self):
+        self.__displayed_turn += 1
+        self.__update_state_displays()
+
+    def click_square(self, position: int):
         try:
-            self.__game.undo()
-            self.__history_view = -1
-            self.__update()
-        except NoHistoryError:
-            self.__error_var.set("There's no game history to undo.")
-    
-    def __undo_here(self):
-        for i in range(-self.__history_view - 1):
-            self.__game.undo()
-        self.__history_view = -1
-        self.__update()
+            self.__game.play(position)
+        except domain.RewritableTicTacToeError as e:
+            self.__message_var.set(str(e))
+        else:
+            self.__displayed_turn = self.__game.turns_elapsed
+            self.__update_state_displays()
+
+    def reset(self):
+        self.__game = domain.Game()
+        self.__displayed_turn = 0
+        self.__update_state_displays()
+
+    def undo(self):
+        self.__game.undo_once()
+        self.__displayed_turn = self.__game.turns_elapsed
+        self.__update_state_displays()
+
+    def undo_to_here(self):
+        self.__game.undo_until(self.__displayed_turn)
+        self.__update_state_displays()
 
 
-Interface().mainloop()
+if __name__ == "__main__":
+    MainWindow().mainloop()
