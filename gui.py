@@ -97,6 +97,7 @@ class MainWindow(tkinter.Tk):
 
     def __update_state_displays(self):
         self.__current_state_display.show(self.__game[self.__displayed_turn])
+        self.__message_var.set("")
         self.__turn_var.set(
             f"Turn {self.__displayed_turn}/{self.__game.turns_elapsed}"
         )
