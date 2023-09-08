@@ -108,6 +108,10 @@ class Game:
         return self.__positions_played.copy()
 
     @property
+    def turns_elapsed(self):
+        return len(self.__positions_played)
+
+    @property
     def winner(self):
         return self.__current_state().winner
 
